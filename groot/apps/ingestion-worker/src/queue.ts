@@ -9,7 +9,7 @@ import { Queue, Worker, type Job, type ConnectionOptions } from 'bullmq';
 import IORedis from 'ioredis';
 import type { IngestionJobInput, IngestionJobResult } from './pipeline.js';
 
-const QUEUE_NAME = 'groot:ingestion';
+const QUEUE_NAME = 'groot-ingestion';
 
 function makeRedis(url: string): ConnectionOptions {
   // IORedis is compatible with BullMQ's ConnectionOptions at runtime even

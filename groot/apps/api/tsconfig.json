@@ -11,6 +11,7 @@
     "useDefineForClassFields": false,
     "noUncheckedIndexedAccess": false,
     "declaration": false,
+    "declarationMap": false,
     "sourceMap": true
   },
   "include": ["src/**/*"],

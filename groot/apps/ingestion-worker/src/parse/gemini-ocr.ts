@@ -77,7 +77,7 @@ export class GeminiOcrParser {
       throw new Error(`Gemini OCR error: ${response.statusText}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as any;
     const text: string = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {

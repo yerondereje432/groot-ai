@@ -108,7 +108,7 @@ export class AuthService {
   }
 
   private async issueTokens(user: CurrentUser): Promise<AuthTokens> {
-    const accessTtl = this.config.get<number>('jwtAccessTtlSeconds');
+    const accessTtl = this.config.get<number>('jwtAccessTtlSeconds') ?? 3600;
     const refreshTtl = this.config.get<number>('jwtRefreshTtlSeconds');
     const accessToken = await this.jwt.signAsync({
       sub: user.id,

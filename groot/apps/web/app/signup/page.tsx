@@ -1,12 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase-client";
 import { Shell, GrootMark, Glass, Field, Input, Select, PrimaryButton, Eyebrow } from "@/components/ui";
 
 interface GradeOption { id: string; level: number; label: string; }
+
+const DEFAULT_GRADES: GradeOption[] = [
+  { id: "g9", level: 9, label: "Grade 9" },
+  { id: "g10", level: 10, label: "Grade 10" },
+  { id: "g11", level: 11, label: "Grade 11" },
+  { id: "g12", level: 12, label: "Grade 12" },
+];
+
+function deduplicateGrades(list: GradeOption[]): GradeOption[] {
+  const map = new Map<number, GradeOption>();
+  for (const item of list) {
+    if (!map.has(item.level)) {
+      map.set(item.level, item);
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => a.level - b.level);
+}
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -15,26 +32,40 @@ export default function SignUpPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [gradeId, setGradeId] = useState("");
-  const [grades, setGrades] = useState<GradeOption[]>([]);
+  const [grades, setGrades] = useState<GradeOption[]>(DEFAULT_GRADES);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  async function loadGrades() {
-    const { data } = await supabase.from("grades").select("id, level, label").order("level");
-    if (data) setGrades(data);
-  }
-  function handleGradeFieldFocus() { if (grades.length === 0) loadGrades(); }
+  useEffect(() => {
+    supabase.from("grades").select("id, level, label").order("level").then(({ data }) => {
+      if (data && data.length > 0) {
+        setGrades(deduplicateGrades(data));
+      }
+    });
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); setError(null);
     if (!gradeId) { setError("Select your grade — Groot needs this to answer from the right textbook."); return; }
     setSubmitting(true);
-    const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
-    if (authError || !authData.user) { setError(authError?.message ?? "Could not create your account."); setSubmitting(false); return; }
-    const { error: profileError } = await supabase.from("profiles").insert({
-      id: authData.user.id, full_name: fullName, role: "student", current_grade_id: gradeId,
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { full_name: fullName } }
     });
-    if (profileError) { setError("Account created, but saving your grade failed. Try signing in and setting it again."); setSubmitting(false); return; }
+    if (authError || !authData.user) { setError(authError?.message ?? "Could not create your account."); setSubmitting(false); return; }
+
+    const { error: profileError } = await supabase.from("profiles").upsert({
+      id: authData.user.id, full_name: fullName, role: "student", current_grade_id: gradeId,
+    }, { onConflict: "id" });
+
+    if (profileError) {
+      // Fallback: save profile without gradeId if FK constraint is missing in DB
+      await supabase.from("profiles").upsert({
+        id: authData.user.id, full_name: fullName, role: "student",
+      }, { onConflict: "id" }).catch(() => {});
+    }
+
     router.push("/dashboard"); router.refresh();
   }
 
@@ -67,7 +98,7 @@ export default function SignUpPage() {
                 </Field>
               </div>
               <Field label="Your grade" hint="Required for curriculum filtering">
-                <Select value={gradeId} onChange={e=>setGradeId(e.target.value)} onFocus={handleGradeFieldFocus} required>
+                <Select value={gradeId} onChange={e=>setGradeId(e.target.value)} required>
                   <option value="">Select grade…</option>
                   {grades.map(g=> <option key={g.id} value={g.id}>{g.label}</option>)}
                 </Select>

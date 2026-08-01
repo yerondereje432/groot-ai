@@ -96,7 +96,7 @@ export class GeminiProvider implements LLMProvider, EmbeddingProvider {
       throw new Error(`Gemini error: ${response.statusText}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as any;
     const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     
     return {
@@ -125,7 +125,7 @@ export class GeminiProvider implements LLMProvider, EmbeddingProvider {
       throw new Error(`Gemini embedding error: ${response.statusText}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as any;
     return data.embedding.values;
   }
 
@@ -148,7 +148,7 @@ export class GeminiProvider implements LLMProvider, EmbeddingProvider {
       throw new Error(`Gemini batch embedding error: ${response.statusText}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as any;
     return data.embeddings.map((e: any) => e.values);
   }
 

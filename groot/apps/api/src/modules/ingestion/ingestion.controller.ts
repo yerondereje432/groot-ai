@@ -43,9 +43,9 @@ export class IngestionController {
       where: { status: 'draft' },
       _count: { _all: true },
     });
-    return versions.map(v => ({
+    return versions.map((v: any) => ({
       version: v.version,
-      pendingChunks: counts.find(c => c.version === v.version)?._count?._all ?? 0,
+      pendingChunks: counts.find((c: any) => c.version === v.version)?._count?._all ?? 0,
     }));
   }
 

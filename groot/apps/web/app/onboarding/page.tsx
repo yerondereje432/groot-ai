@@ -8,25 +8,45 @@ import { Shell, GrootMark, Glass, Field, Select, PrimaryButton, Eyebrow } from "
 interface CurriculumOption { id: string; name: string; }
 interface GradeOption { id: string; level: number; label: string; curriculum_id: string; }
 
+const DEFAULT_CURRICULA: CurriculumOption[] = [
+  { id: "ethiopian-national", name: "Ethiopian National Curriculum" }
+];
+
+const DEFAULT_GRADES: GradeOption[] = [
+  { id: "g9", level: 9, label: "Grade 9", curriculum_id: "ethiopian-national" },
+  { id: "g10", level: 10, label: "Grade 10", curriculum_id: "ethiopian-national" },
+  { id: "g11", level: 11, label: "Grade 11", curriculum_id: "ethiopian-national" },
+  { id: "g12", level: 12, label: "Grade 12", curriculum_id: "ethiopian-national" },
+];
+
 export default function OnboardingPage() {
   const router = useRouter();
   const supabase = createClient();
-  const [curricula, setCurricula] = useState<CurriculumOption[]>([]);
-  const [grades, setGrades] = useState<GradeOption[]>([]);
-  const [curriculumId, setCurriculumId] = useState("");
+  const [curricula, setCurricula] = useState<CurriculumOption[]>(DEFAULT_CURRICULA);
+  const [grades, setGrades] = useState<GradeOption[]>(DEFAULT_GRADES);
+  const [curriculumId, setCurriculumId] = useState("ethiopian-national");
   const [gradeId, setGradeId] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.from("curricula").select("id, name").then(({ data }) => {
-      if (data) { setCurricula(data); if (data.length === 1) setCurriculumId(data[0].id); }
+      if (data && data.length > 0) { setCurricula(data); if (data.length === 1) setCurriculumId(data[0].id); }
     });
   }, []);
+
   useEffect(() => {
-    if (!curriculumId) { setGrades([]); return; }
+    if (!curriculumId) { return; }
     supabase.from("grades").select("id, level, label, curriculum_id").eq("curriculum_id", curriculumId).order("level")
-      .then(({ data }) => setGrades(data ?? []));
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          const map = new Map<number, GradeOption>();
+          for (const item of data) {
+            if (!map.has(item.level)) map.set(item.level, item);
+          }
+          setGrades(Array.from(map.values()).sort((a, b) => a.level - b.level));
+        }
+      });
   }, [curriculumId]);
 
   async function handleSave() {

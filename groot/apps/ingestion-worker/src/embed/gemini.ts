@@ -37,7 +37,7 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
       throw new Error(`Gemini batch embedding error: ${response.statusText}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as any;
     return data.embeddings.map((e: any) => e.values);
   }
 }
