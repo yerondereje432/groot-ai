@@ -1,0 +1,441 @@
+// =============================================================
+// GROOT — Prisma schema
+// Per spec §41 (Core Tables) and §11 (PostgreSQL primary store).
+//
+// IMPORTANT: This schema covers relational entities.
+// Vector columns and HNSW index for curriculum_chunks are created
+// via a manual SQL migration (see prisma/migrations/sql/pgvector.sql)
+// because Prisma's pgvector support is limited at the time of writing.
+// =============================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [uuidOssp(map: "uuid-ossp"), pg_trgm, vector]
+}
+
+// =============================================================
+// Users, schools, auth (per §41)
+// =============================================================
+
+enum UserRole {
+  student
+  teacher
+  school_admin
+  platform_admin
+}
+
+enum UserStatus {
+  active
+  suspended
+}
+
+enum Locale {
+  am
+  en
+}
+
+model School {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  region       String
+  licenseTier  String   @default("basic")
+  seatsTotal   Int      @default(0)
+  seatsUsed    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  users        User[]
+
+  @@map("schools")
+}
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  role         UserRole
+  fullName     String
+  phone        String     @unique
+  email        String?    @unique
+  passwordHash String?
+  locale       Locale     @default(en)
+  grade        Int?       // 9..12 only when role=student; validated at app layer
+  schoolId     String?    @db.Uuid
+  status       UserStatus @default(active)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  school                School?                 @relation(fields: [schoolId], references: [id])
+  tutorSessions         TutorSession[]
+  usageCounters         UsageCounter[]
+  subscriptions         Subscription[]
+  payments              Payment[]
+  progress              Progress[]
+  classMemberships      ClassMember[]
+  examAttempts          ExamAttempt[]
+  auditLogsAsActor      AuditLog[]              @relation("AuditActor")
+
+  @@index([role])
+  @@index([schoolId])
+  @@map("users")
+}
+
+// =============================================================
+// Curriculum hierarchy (per §41)
+// =============================================================
+
+model Subject {
+  id       String   @id @default(uuid()) @db.Uuid
+  name     String
+  grade    Int      // 9..12
+  language Locale
+
+  units    Unit[]
+
+  @@unique([name, grade, language])
+  @@index([grade])
+  @@map("subjects")
+}
+
+model Unit {
+  id                String   @id @default(uuid()) @db.Uuid
+  subjectId         String   @db.Uuid
+  title             String
+  orderIndex        Int
+  curriculumVersion String   @default("2024.1")
+
+  subject           Subject       @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  topics            Topic[]
+
+  @@unique([subjectId, orderIndex])
+  @@index([subjectId])
+  @@map("units")
+}
+
+model Topic {
+  id         String   @id @default(uuid()) @db.Uuid
+  unitId     String   @db.Uuid
+  title      String
+  orderIndex Int
+
+  unit       Unit             @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  chunks     CurriculumChunk[]
+  questions  Question[]
+  progress   Progress[]
+
+  @@unique([unitId, orderIndex])
+  @@index([unitId])
+  @@map("topics")
+}
+
+// Curriculum chunks — pgvector column added via raw SQL migration.
+// Status drives QA gate (draft → review → published) per §16.
+model CurriculumChunk {
+  id        String   @id @default(uuid()) @db.Uuid
+  topicId   String   @db.Uuid
+  content   String   @db.Text
+  sourceRef String   // "Grade-9-Science.pdf p.42 §3.2"
+  version   String   @default("2024.1")
+  status    CurriculumChunkStatus @default(draft)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  topic     Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@index([topicId, status])
+  @@index([status, version])
+  @@map("curriculum_chunks")
+}
+
+enum CurriculumChunkStatus {
+  draft
+  review
+  published
+  archived
+}
+
+// =============================================================
+// Tutor sessions (per §41)
+// =============================================================
+
+model TutorSession {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  subjectId String   @db.Uuid
+  grade     Int
+  locale    Locale
+  createdAt DateTime @default(now())
+
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  TutorMessage[]
+
+  @@index([userId, createdAt])
+  @@map("tutor_sessions")
+}
+
+model TutorMessage {
+  id                  String   @id @default(uuid()) @db.Uuid
+  sessionId           String   @db.Uuid
+  role                String   // "user" | "assistant"
+  content             String   @db.Text
+  retrievedChunkIds   Json     @default("[]")
+  createdAt           DateTime @default(now())
+
+  session             TutorSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("tutor_messages")
+}
+
+// =============================================================
+// Questions (per §41)
+// =============================================================
+
+enum QuestionType {
+  mcq
+  short
+  truefalse
+}
+
+enum QuestionSource {
+  generated
+  authored
+  exam_bank
+}
+
+enum QuestionStatus {
+  draft
+  review
+  published
+}
+
+model Question {
+  id                    String         @id @default(uuid()) @db.Uuid
+  topicId               String         @db.Uuid
+  type                  QuestionType
+  stem                  String         @db.Text
+  options               Json?          // MCQOption[] for mcq; null otherwise
+  answer                String?        @db.Text
+  difficulty            Int            @default(3) // 1..5
+  source                QuestionSource
+  language              Locale
+  status                QuestionStatus @default(draft)
+  derivedFromChunkIds   Json           @default("[]")
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  topic                 Topic          @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@index([topicId, status])
+  @@index([status, language])
+  @@map("questions")
+}
+
+// =============================================================
+// Exams (per §41) — skeleton, deferred
+// =============================================================
+
+model Exam {
+  id              String   @id @default(uuid()) @db.Uuid
+  title           String
+  grade           Int
+  subjectId       String   @db.Uuid
+  durationMinutes Int
+  questionIds     Json     @default("[]")
+  createdById     String   @db.Uuid
+  createdAt       DateTime @default(now())
+
+  attempts        ExamAttempt[]
+
+  @@index([subjectId, grade])
+  @@map("exams")
+}
+
+model ExamAttempt {
+  id           String    @id @default(uuid()) @db.Uuid
+  examId       String    @db.Uuid
+  userId       String    @db.Uuid
+  startedAt    DateTime  @default(now())
+  submittedAt  DateTime?
+  score        Float?
+
+  exam         Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers      AttemptAnswer[]
+
+  @@index([userId, startedAt])
+  @@index([examId])
+  @@map("exam_attempts")
+}
+
+model AttemptAnswer {
+  id          String  @id @default(uuid()) @db.Uuid
+  attemptId   String  @db.Uuid
+  questionId  String  @db.Uuid
+  givenAnswer String  @db.Text
+  isCorrect   Boolean
+
+  attempt     ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId])
+  @@map("attempt_answers")
+}
+
+// =============================================================
+// Progress (per §41) — drives personalized learning path (§FR-4)
+// =============================================================
+
+model Progress {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @db.Uuid
+  topicId         String   @db.Uuid
+  masteryScore    Float    @default(0)   // 0..1
+  attemptsCount   Int      @default(0)
+  lastPracticedAt DateTime @default(now())
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topic           Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, topicId])
+  @@index([userId])
+  @@map("progress")
+}
+
+// =============================================================
+// Classes (per §41) — teacher functionality
+// =============================================================
+
+model Class {
+  id        String   @id @default(uuid()) @db.Uuid
+  teacherId String   @db.Uuid
+  schoolId  String?  @db.Uuid
+  name      String
+  joinCode  String   @unique
+  createdAt DateTime @default(now())
+
+  members   ClassMember[]
+
+  @@index([teacherId])
+  @@map("classes")
+}
+
+model ClassMember {
+  id        String   @id @default(uuid()) @db.Uuid
+  classId   String   @db.Uuid
+  studentId String   @db.Uuid
+  joinedAt  DateTime @default(now())
+
+  class     Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+  student   User  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, studentId])
+  @@index([studentId])
+  @@map("class_members")
+}
+
+// =============================================================
+// Subscriptions, payments (per §41, §22-25)
+// Skeleton for the vertical; full wiring deferred.
+// =============================================================
+
+enum SubscriptionPlan {
+  free
+  pro_monthly
+  pro_annual
+  school
+}
+
+enum SubscriptionStatus {
+  active
+  past_due
+  canceled
+}
+
+model Subscription {
+  id          String              @id @default(uuid()) @db.Uuid
+  userId      String              @db.Uuid
+  plan        SubscriptionPlan
+  status      SubscriptionStatus  @default(active)
+  periodStart DateTime
+  periodEnd   DateTime
+  provider    String?             // "telebirr" | "chapa" | null (free)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("subscriptions")
+}
+
+enum PaymentProviderName {
+  telebirr
+  chapa
+}
+
+enum PaymentStatus {
+  initiated
+  paid
+  failed
+  refunded
+}
+
+model Payment {
+  id           String             @id @default(uuid()) @db.Uuid
+  userId       String             @db.Uuid
+  provider     PaymentProviderName
+  providerRef  String             @unique // Telebirr/Chapa transaction id
+  txRef        String             @unique // our internal ref (= idempotency key)
+  amount       Decimal            @db.Decimal(12, 2)
+  currency     String             @default("ETB")
+  status       PaymentStatus      @default(initiated)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  user         User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("payments")
+}
+
+// =============================================================
+// Free-tier usage metering (per §22) — Redis is the hot path,
+// this table is the durable record.
+// =============================================================
+
+model UsageCounter {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @db.Uuid
+  date            DateTime @db.Date
+  aiQueriesCount  Int      @default(0)
+
+  user            User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@map("usage_counters")
+}
+
+// =============================================================
+// Audit logs (per §27)
+// =============================================================
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorId     String?  @db.Uuid
+  action      String   // e.g. "user.suspend", "payment.verify", "chunk.publish"
+  target      String?  // resource id
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now())
+
+  actor       User?    @relation("AuditActor", fields: [actorId], references: [id])
+
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}

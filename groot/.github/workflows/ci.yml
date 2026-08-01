@@ -1,0 +1,72 @@
+# =============================================================
+# GROOT — CI pipeline
+# Per spec §33:
+#   Commit → Lint + Type-check → Unit tests → Build →
+#   Integration tests → RAG eval gate → Security scan →
+#   Build images → Deploy to staging → E2E tests → Manual approval
+#   → Deploy to production (rolling) → Smoke tests
+#
+# For the vertical, only the gates that can run without external
+# infrastructure are included. Real integrations would add:
+#   - Database-backed integration tests (testcontainers)
+#   - Playwright E2E
+#   - Snyk/Trivy security scan
+#   - Helm/Terraform deploy steps
+# =============================================================
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm run typecheck --workspaces --if-present
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm test --workspaces --if-present
+
+  rag-eval-gate:
+    # Per spec §32: "Critical: The RAG evaluation suite is non-negotiable —
+    # every prompt or model change must pass the curriculum-accuracy
+    # regression gate before deploy."
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm run eval --workspace apps/ai-service
+
+  build:
+    needs: [lint-typecheck, unit-tests, rag-eval-gate]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm run build --workspaces --if-present
+      - name: Build API image
+        run: docker build -f infra/docker/api.Dockerfile -t groot/api:${{ github.sha }} .
+      - name: Build AI service image
+        run: docker build -f infra/docker/ai-service.Dockerfile -t groot/ai-service:${{ github.sha }} .
+      - name: Build ingestion image
+        run: docker build -f infra/docker/ingestion.Dockerfile -t groot/ingestion:${{ github.sha }} .
+      - name: Build web image
+        run: docker build -f infra/docker/web.Dockerfile -t groot/web:${{ github.sha }} .
