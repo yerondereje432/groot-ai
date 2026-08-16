@@ -22,8 +22,8 @@ export class GeminiProvider implements LLMProvider, EmbeddingProvider {
     dimension?: number;
   }) {
     this.apiKey = options.apiKey;
-    this.generationModel = options.generationModel || 'gemini-1.5-flash';
-    this.embeddingModel = options.embeddingModel || 'text-embedding-004';
+    this.generationModel = options.generationModel || 'gemini-3.5-flash';
+    this.embeddingModel = options.embeddingModel || 'gemini-embedding-2';
     this.dimension = options.dimension || 768; // text-embedding-004 defaults to 768 but can be varied
   }
 

@@ -1,5 +1,5 @@
 export class GeminiEmbeddingProvider {
-    constructor(apiKey, model = 'text-embedding-004', dimension = 768) {
+    constructor(apiKey, model = 'gemini-embedding-2', dimension = 768) {
         this.name = 'gemini';
         this.baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
         this.apiKey = apiKey;
@@ -7,28 +7,30 @@ export class GeminiEmbeddingProvider {
         this.dimension = dimension;
     }
     async embed(text) {
-        const res = await this.embedBatch([text]);
-        return res[0];
-    }
-    async embedBatch(texts) {
-        const url = `${this.baseUrl}/models/${this.model}:batchEmbedContents?key=${this.apiKey}`;
+        const url = `${this.baseUrl}/models/${this.model}:embedContent?key=${this.apiKey}`;
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                requests: texts.map(text => ({
-                    model: `models/${this.model}`,
-                    content: { parts: [{ text }] },
-                    taskType: 'RETRIEVAL_DOCUMENT',
-                    outputDimensionality: this.dimension
-                }))
+                model: `models/${this.model}`,
+                content: { parts: [{ text }] },
+                taskType: 'RETRIEVAL_DOCUMENT',
+                outputDimensionality: this.dimension
             })
         });
         if (!response.ok) {
-            throw new Error(`Gemini batch embedding error: ${response.statusText}`);
+            const errorText = await response.text();
+            throw new Error(`Gemini embedding error: ${response.status} ${response.statusText}\nBody: ${errorText}`);
         }
         const data = (await response.json());
-        return data.embeddings.map((e) => e.values);
+        return data.embedding.values;
+    }
+    async embedBatch(texts) {
+        const results = [];
+        for (const text of texts) {
+            results.push(await this.embed(text));
+        }
+        return results;
     }
 }
 //# sourceMappingURL=gemini.js.map

@@ -7,37 +7,39 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
   private readonly model: string;
   private readonly baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
 
-  constructor(apiKey: string, model = 'text-embedding-004', dimension = 768) {
+  constructor(apiKey: string, model = 'gemini-embedding-2', dimension = 768) {
     this.apiKey = apiKey;
     this.model = model;
     this.dimension = dimension;
   }
 
   async embed(text: string): Promise<number[]> {
-    const res = await this.embedBatch([text]);
-    return res[0]!;
-  }
-
-  async embedBatch(texts: string[]): Promise<number[][]> {
-    const url = `${this.baseUrl}/models/${this.model}:batchEmbedContents?key=${this.apiKey}`;
+    const url = `${this.baseUrl}/models/${this.model}:embedContent?key=${this.apiKey}`;
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        requests: texts.map(text => ({
-          model: `models/${this.model}`,
-          content: { parts: [{ text }] },
-          taskType: 'RETRIEVAL_DOCUMENT',
-          outputDimensionality: this.dimension
-        }))
+        model: `models/${this.model}`,
+        content: { parts: [{ text }] },
+        taskType: 'RETRIEVAL_DOCUMENT',
+        outputDimensionality: this.dimension
       })
     });
 
     if (!response.ok) {
-      throw new Error(`Gemini batch embedding error: ${response.statusText}`);
+      const errorText = await response.text();
+      throw new Error(`Gemini embedding error: ${response.status} ${response.statusText}\nBody: ${errorText}`);
     }
 
     const data = (await response.json()) as any;
-    return data.embeddings.map((e: any) => e.values);
+    return data.embedding.values;
+  }
+
+  async embedBatch(texts: string[]): Promise<number[][]> {
+    const results: number[][] = [];
+    for (const text of texts) {
+      results.push(await this.embed(text));
+    }
+    return results;
   }
 }

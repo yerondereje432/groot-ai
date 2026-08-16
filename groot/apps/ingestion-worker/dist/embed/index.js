@@ -12,7 +12,7 @@ import { StubEmbeddingProvider } from '../util/stub-embedder.js';
 import { GeminiEmbeddingProvider } from './gemini.js';
 export function localEmbeddingProvider(dimension = 384, provider = 'stub', apiKey) {
     if (provider === 'gemini' && apiKey) {
-        return new GeminiEmbeddingProvider(apiKey, 'text-embedding-004', dimension);
+        return new GeminiEmbeddingProvider(apiKey, 'gemini-embedding-2', dimension);
     }
     return new StubEmbeddingProvider(dimension);
 }

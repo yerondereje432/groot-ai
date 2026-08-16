@@ -25,7 +25,7 @@ export function localEmbeddingProvider(
   apiKey?: string
 ): EmbeddingProvider {
   if (provider === 'gemini' && apiKey) {
-    return new GeminiEmbeddingProvider(apiKey, 'text-embedding-004', dimension);
+    return new GeminiEmbeddingProvider(apiKey, 'gemini-embedding-2', dimension);
   }
   return new StubEmbeddingProvider(dimension);
 }

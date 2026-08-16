@@ -3,8 +3,8 @@ export class GeminiProvider {
         this.name = 'gemini';
         this.baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
         this.apiKey = options.apiKey;
-        this.generationModel = options.generationModel || 'gemini-1.5-flash';
-        this.embeddingModel = options.embeddingModel || 'text-embedding-004';
+        this.generationModel = options.generationModel || 'gemini-3.5-flash';
+        this.embeddingModel = options.embeddingModel || 'gemini-embedding-2';
         this.dimension = options.dimension || 768; // text-embedding-004 defaults to 768 but can be varied
     }
     async *stream(req) {

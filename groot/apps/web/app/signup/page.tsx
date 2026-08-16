@@ -8,23 +8,6 @@ import { Shell, GrootMark, Glass, Field, Input, Select, PrimaryButton, Eyebrow }
 
 interface GradeOption { id: string; level: number; label: string; }
 
-const DEFAULT_GRADES: GradeOption[] = [
-  { id: "g9", level: 9, label: "Grade 9" },
-  { id: "g10", level: 10, label: "Grade 10" },
-  { id: "g11", level: 11, label: "Grade 11" },
-  { id: "g12", level: 12, label: "Grade 12" },
-];
-
-function deduplicateGrades(list: GradeOption[]): GradeOption[] {
-  const map = new Map<number, GradeOption>();
-  for (const item of list) {
-    if (!map.has(item.level)) {
-      map.set(item.level, item);
-    }
-  }
-  return Array.from(map.values()).sort((a, b) => a.level - b.level);
-}
-
 export default function SignUpPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -32,41 +15,58 @@ export default function SignUpPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [gradeId, setGradeId] = useState("");
-  const [grades, setGrades] = useState<GradeOption[]>(DEFAULT_GRADES);
+  const [grades, setGrades] = useState<GradeOption[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    supabase.from("grades").select("id, level, label").order("level").then(({ data }) => {
-      if (data && data.length > 0) {
-        setGrades(deduplicateGrades(data));
-      }
-    });
-  }, []);
+    async function loadGrades() {
+      const { data } = await supabase.from("grades").select("id, level, label").order("level");
+      if (data) setGrades(data);
+    }
+    loadGrades();
+  }, [supabase]);
 
   async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault(); setError(null);
-    if (!gradeId) { setError("Select your grade — Groot needs this to answer from the right textbook."); return; }
-    setSubmitting(true);
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: fullName } }
-    });
-    if (authError || !authData.user) { setError(authError?.message ?? "Could not create your account."); setSubmitting(false); return; }
+    e.preventDefault();
+    setError(null);
 
-    const { error: profileError } = await supabase.from("profiles").upsert({
-      id: authData.user.id, full_name: fullName, role: "student", current_grade_id: gradeId,
-    }, { onConflict: "id" });
-
-    if (profileError) {
-      // Fallback: save profile without gradeId if FK constraint is missing in DB
-      await supabase.from("profiles").upsert({
-        id: authData.user.id, full_name: fullName, role: "student",
-      }, { onConflict: "id" }).catch(() => {});
+    if (!gradeId) {
+      setError("Select your grade — Groot needs this to answer from the right textbook.");
+      return;
     }
 
-    router.push("/dashboard"); router.refresh();
+    setSubmitting(true);
+
+    // 1. Sign up user
+    const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
+
+    if (authError || !authData.user) {
+      setError(authError?.message ?? "Could not create your account.");
+      setSubmitting(false);
+      return;
+    }
+
+    // 2. Create profile
+    // NOTE: Supabase's query builder only has .then(), not .catch(), until awaited —
+    // so we await it directly and check the returned error instead of chaining .catch().
+    const { error: profileError } = await supabase.from("profiles").upsert({
+      id: authData.user.id,
+      full_name: fullName,
+      role: "student",
+      current_grade_id: gradeId,
+    }, {
+      onConflict: "id"
+    });
+
+    if (profileError) {
+      setError("Account created, but saving your profile failed. You can update it in the dashboard.");
+      setSubmitting(false);
+      return;
+    }
+
+    router.push("/dashboard");
+    router.refresh();
   }
 
   return (
