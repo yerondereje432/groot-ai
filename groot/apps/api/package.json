@@ -8,10 +8,10 @@
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "db:migrate": "prisma migrate dev && psql \"$DATABASE_URL\" -f prisma/migrations/sql/pgvector.sql",
+    "db:migrate": "prisma migrate dev && prisma db execute --file prisma/sql/pgvector.sql --schema prisma/schema.prisma",
     "db:seed": "tsx ../../apps/ingestion-worker/scripts/ingest-sample.ts",
     "db:generate": "prisma generate",
-    "db:reset": "prisma migrate reset --force && psql \"$DATABASE_URL\" -f prisma/migrations/sql/pgvector.sql"
+    "db:reset": "prisma migrate reset --force && prisma db execute --file prisma/sql/pgvector.sql --schema prisma/schema.prisma"
   },
   "dependencies": {
     "@groot/shared-types": "*",

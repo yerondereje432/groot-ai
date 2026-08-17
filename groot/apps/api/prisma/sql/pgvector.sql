@@ -34,7 +34,7 @@ CREATE INDEX IF NOT EXISTS curriculum_chunks_embedding_hnsw_idx
 -- Composite index supports the metadata filter pattern from §14:
 -- "WHERE topic_id = $1 AND status = 'published' ORDER BY embedding <=> $2"
 CREATE INDEX IF NOT EXISTS curriculum_chunks_topic_status_idx
-  ON curriculum_chunks (topic_id, status);
+  ON curriculum_chunks ("topicId", status);
 
 -- Function for hybrid retrieval: vector + lexical.
 -- Returns chunks scored by weighted combination of cosine similarity and
@@ -64,9 +64,9 @@ STABLE
 AS $$
   SELECT
     c.id            AS chunk_id,
-    c.topic_id      AS topic_id,
+    c."topicId"     AS topic_id,
     c.content       AS content,
-    c.source_ref    AS source_ref,
+    c."sourceRef"   AS source_ref,
     c.version       AS version,
     -- Cosine similarity -> score in [0,1] (cosine distance is 0..2).
     (1.0 - (c.embedding <=> query_embedding))::float AS vector_score,
@@ -77,10 +77,10 @@ AS $$
       lex_weight  * COALESCE(ts_rank_cd(to_tsvector('simple', c.content), plainto_tsquery('simple', query_text)), 0)
     )::float AS combined_score
   FROM curriculum_chunks c
-  JOIN topics t ON t.id = c.topic_id
-  JOIN units  u ON u.id = t.unit_id
+  JOIN topics t ON t.id = c."topicId"
+  JOIN units  u ON u.id = t."unitId"
   WHERE c.status = 'published'
-    AND u.subject_id = filter_subject
+    AND u."subjectId" = filter_subject
   ORDER BY combined_score DESC
   LIMIT top_k;
 $$;
