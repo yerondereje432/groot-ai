@@ -1,6 +1,7 @@
 # Multi-stage Dockerfile for the NestJS API.
 # Per spec §29: containerization.
 FROM node:20-alpine AS deps
+RUN apk add --no-cache openssl
 WORKDIR /app
 COPY package*.json ./
 COPY apps/api/package*.json apps/api/
@@ -8,6 +9,7 @@ COPY packages/shared-types/package*.json packages/shared-types/
 RUN npm ci --ignore-scripts
 
 FROM node:20-alpine AS build
+RUN apk add --no-cache openssl
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -17,6 +19,7 @@ RUN npx prisma generate --schema apps/api/prisma/schema.prisma
 RUN npm run build --workspace apps/api
 
 FROM node:20-alpine AS runtime
+RUN apk add --no-cache openssl
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/node_modules ./node_modules
