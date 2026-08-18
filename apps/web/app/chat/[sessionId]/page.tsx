@@ -4,38 +4,68 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { ChatMessage, type ChatMessageData } from "@/components/ChatMessage";
 import { AuroraBackground, GrootMark, Badge, Glass } from "@/components/ui";
+import { createClient } from "@/lib/supabase-client";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3000/api/v1";
 
+interface SessionData {
+  id: string;
+  grade: number;
+  subjectId: string;
+  subjects: { name: string };
+}
+
 export default function ChatPage({ params }: { params: { sessionId: string } }) {
+  const supabase = createClient();
   const [messages, setMessages] = useState<ChatMessageData[]>([]);
+  const [session, setSession] = useState<SessionData | null>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Load session metadata on mount
+  useEffect(() => {
+    async function loadSession() {
+      const { data, error } = await supabase
+        .from("tutor_sessions")
+        .select("id, grade, subjectId, subjects(name)")
+        .eq("id", params.sessionId)
+        .single();
+      
+      if (data) setSession(data as any);
+      if (error) console.error("Session load error:", error);
+    }
+    loadSession();
+  }, [params.sessionId, supabase]);
+
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }); }, [messages]);
 
   async function handleSend() {
-    if (!input.trim() || sending) return;
+    if (!input.trim() || sending || !session) return;
+    
     const studentMessage: ChatMessageData = { id: crypto.randomUUID(), role: "student", content: input, citations: [] };
     setMessages((prev) => [...prev, studentMessage]);
-    setInput(""); setSending(true);
+    setInput(""); 
+    setSending(true);
+
     try {
-      // Note: In a real app, we'd pull these from the user's session/context
+      const { data: { session: authSession } } = await supabase.auth.getSession();
+
       const response = await fetch(`${BACKEND_URL}/tutor`, {
         method: "POST", 
         headers: { 
           "Content-Type": "application/json",
-          // Auth header would go here: "Authorization": `Bearer ${token}`
+          "Authorization": `Bearer ${authSession?.access_token}`
         },
         body: JSON.stringify({ 
           query: studentMessage.content,
-          grade: 10, // Default for demo
-          subjectId: "00000000-0000-0000-0000-000000000000", // Dummy UUID
+          grade: session.grade,
+          subjectId: session.subjectId,
           locale: "en"
         }),
       });
+
       if (!response.ok) throw new Error();
       const data = await response.json();
       
@@ -45,8 +75,11 @@ export default function ChatPage({ params }: { params: { sessionId: string } }) 
         setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "assistant", content: data.content, citations: data.citations ?? [] }]);
       }
     } catch {
-      setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "assistant", content: `Couldn’t reach the tutor backend at ${BACKEND_URL}. Ensure the NestJS API is running.`, citations: [] }]);
-    } finally { setSending(false); setTimeout(()=>inputRef.current?.focus(), 10); }
+      setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "assistant", content: `Couldn’t reach the tutor backend at ${BACKEND_URL}.`, citations: [] }]);
+    } finally { 
+      setSending(false); 
+      setTimeout(()=>inputRef.current?.focus(), 10); 
+    }
   }
 
   return (
@@ -58,11 +91,13 @@ export default function ChatPage({ params }: { params: { sessionId: string } }) 
         <div className="h-[62px] px-5 flex items-center border-b border-glassline"><GrootMark /></div>
         <div className="p-5 flex-1">
           <div className="eyebrow mb-2">Current session</div>
-          <div className="text-[13px] text-ink-soft leading-relaxed">Curriculum-grounded answers with chapter citations.</div>
+          <div className="text-[13px] text-ink-soft leading-relaxed">
+            {session ? `Studying ${session.subjects.name} (Grade ${session.grade})` : "Loading session..."}
+          </div>
           <div className="mt-5 space-y-2.5 text-[12.5px] text-ink-soft">
             {[
-              ["Grade-filtered RAG", "#2DD4BF"],
-              ["Section-cited", "#FFC86B"],
+              ["Curriculum-locked", "#2DD4BF"],
+              ["Chapter-cited", "#FFC86B"],
               ["No web fallback", "#9BCBC0"],
             ].map(([t,c])=>(
               <div key={t as string} className="flex items-center gap-2">
@@ -70,12 +105,6 @@ export default function ChatPage({ params }: { params: { sessionId: string } }) 
                 {t}
               </div>
             ))}
-          </div>
-          <div className="mt-6">
-            <Glass padding className="!p-4 bg-white/[0.023]">
-              <div className="text-[11px] text-ink-faint font-mono uppercase tracking-wider mb-1">Session</div>
-              <div className="text-[12px] text-ink-soft font-mono break-all">{params.sessionId.slice(0,18)}…</div>
-            </Glass>
           </div>
         </div>
         <div className="p-5 border-t border-glassline">
@@ -90,9 +119,8 @@ export default function ChatPage({ params }: { params: { sessionId: string } }) 
           <div className="flex items-center gap-3">
             <Link href="/dashboard" className="lg:hidden text-ink-soft">←</Link>
             <span className="text-[13px] text-ink-soft">Tutor session</span>
-            <Badge tone="verdigris">curriculum-locked</Badge>
+            <Badge tone="verdigris">{session ? `Grade ${session.grade}` : '...'}</Badge>
           </div>
-          <div className="text-[11px] text-ink-faint font-mono hidden sm:block">{params.sessionId.slice(0,8)}…</div>
         </div>
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-thin">
@@ -104,25 +132,15 @@ export default function ChatPage({ params }: { params: { sessionId: string } }) 
                   What are you<br/>studying today?
                 </h1>
                 <p className="text-[14.5px] text-ink-soft max-w-[520px] leading-relaxed">
-                  Ask anything from your textbook. Groot answers strictly from your grade-level material with chapter citations.
+                  Ask anything from your {session?.subjects.name} textbook. Groot answers strictly from your grade-level material.
                 </p>
-                <div className="flex flex-wrap gap-2 mt-5">
-                  {[
-                    "Explain photosynthesis in Grade 10 Biology Ch. 3",
-                    "Solve: 2x² - 5x + 2 = 0",
-                    "What caused the Battle of Adwa?",
-                  ].map(q=>(
-                    <button key={q} onClick={()=>setInput(q)}
-                      className="text-[12.5px] text-ink-soft border border-glassline rounded-full px-3.5 py-2 hover:border-glassline2 hover:text-ink transition-all text-left"
-                      style={{background:"rgba(255,255,255,0.024)"}}>
-                      {q}
-                    </button>
-                  ))}
-                </div>
               </div>
             )}
             {messages.map(m => <ChatMessage key={m.id} message={m} />)}
-            {sending && <div className="text-[13px] text-ink-faint">Retrieving from textbook…</div>}
+            {sending && <div className="text-[13px] text-ink-faint italic ml-12 mt-2 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-verdigris animate-pulse" />
+              Retrieving from textbook...
+            </div>}
           </div>
         </div>
 
@@ -139,7 +157,7 @@ export default function ChatPage({ params }: { params: { sessionId: string } }) 
                 placeholder="Ask about your chapter…"
                 className="flex-1 bg-transparent outline-none text-[14.5px] text-ink placeholder:text-ink-faint py-1.5"
               />
-              <button onClick={handleSend} disabled={sending || !input.trim()}
+              <button onClick={handleSend} disabled={sending || !input.trim() || !session}
                 className="bg-[linear-gradient(180deg,#2DD4BF_0%,#1AAE9B_100%)] text-[#052623] rounded-[12px] px-4 py-2 text-[13px] font-semibold disabled:opacity-40 hover:brightness-105 transition-all"
                 style={{boxShadow:"0 0 20px rgba(45,212,191,0.18)"}}>
                 Send
