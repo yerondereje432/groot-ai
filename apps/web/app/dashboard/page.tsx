@@ -24,21 +24,20 @@ export default async function DashboardPage() {
     .eq("id", user.id)
     .single();
 
-  // If the user hasn't completed signup/onboarding, send them to signin/onboarding
+  // If the user hasn't completed signup/onboarding, send them to signin
   if (!userData?.grade) {
-    // Note: In a production app, we'd check if they are a student role first.
     redirect("/signup"); 
   }
 
-  // Fetch subjects for this student's grade
+  // Fetch subjects for this student's grade (Including SLUG to satisfy TypeScript)
   const { data: subjects } = await supabase
     .from("subjects")
-    .select("id, name")
+    .select("id, name, slug")
     .eq("grade", userData.grade)
     .order("name");
 
-  // Fetch recent tutor sessions
-  const { data: recentSessions } = await supabase
+  // Fetch recent tutor sessions with subject name join
+  const { data: recentSessionsRaw } = await supabase
     .from("tutor_sessions")
     .select("id, createdAt, subjects(name)")
     .eq("userId", user.id)
@@ -50,11 +49,11 @@ export default async function DashboardPage() {
       studentName={userData.fullName ?? "Student"}
       gradeLabel={`Grade ${userData.grade}`}
       subjects={subjects ?? []}
-      recentSessions={(recentSessions ?? []).map(s => ({
+      recentSessions={(recentSessionsRaw ?? []).map((s: any) => ({
         id: s.id,
-        title: `Session in ${(s.subjects as any)?.name ?? 'General'}`,
+        title: `Session in ${s.subjects?.name ?? 'General'}`,
         updated_at: s.createdAt,
-        subjectName: (s.subjects as any)?.name ?? 'General'
+        subjectName: s.subjects?.name ?? 'General'
       }))}
     />
   );
