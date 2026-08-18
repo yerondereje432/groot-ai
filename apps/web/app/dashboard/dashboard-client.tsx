@@ -7,8 +7,10 @@ import { SubjectGrid, type Subject } from "@/components/SubjectGrid";
 import { Shell, TopNav, GrootMark, PageContainer, Glass, Badge, GhostButton, Eyebrow, I } from "@/components/ui";
 
 interface RecentSession {
-  id: string; title: string | null; updated_at: string;
-  subjects: { name: string } | { name: string }[] | null;
+  id: string; 
+  title: string | null; 
+  updated_at: string;
+  subjectName: string;
 }
 
 export function DashboardClient({
@@ -22,14 +24,29 @@ export function DashboardClient({
   async function handleSelectSubject(subject: Subject) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const { data: profile } = await supabase.from("profiles").select("current_grade_id").eq("id", user.id).single();
-    if (!profile?.current_grade_id) return;
-    const { data: session } = await supabase.from("chat_sessions")
-      .insert({ student_id: user.id, subject_id: subject.id, grade_id: profile.current_grade_id, title: subject.name })
+
+    // 1. Fetch student's grade from the 'users' table
+    const { data: userData } = await supabase.from("users").select("grade").eq("id", user.id).single();
+    if (!userData?.grade) return;
+
+    // 2. Create a new tutor session (matches Prisma model 'TutorSession')
+    const { data: session, error } = await supabase.from("tutor_sessions")
+      .insert({ 
+        userId: user.id, 
+        subjectId: subject.id, 
+        grade: userData.grade,
+        locale: 'en' // Default locale
+      })
       .select("id").single();
+    
+    if (error) {
+      console.error("Session Create Error:", error);
+      return;
+    }
+
     if (session) router.push(`/chat/${session.id}`);
   }
-  function subjectNameFrom(s: RecentSession["subjects"]): string { if (!s) return ""; return Array.isArray(s) ? s[0]?.name ?? "" : s.name; }
+
   async function signOut() { await supabase.auth.signOut(); router.push("/signin"); router.refresh(); }
 
   const firstName = studentName.split(" ")[0];
@@ -85,8 +102,8 @@ export function DashboardClient({
                   <button key={session.id} onClick={() => router.push(`/chat/${session.id}`)}
                     className="w-full flex items-center justify-between rounded-[16px] border border-glassline bg-white/[0.022] px-4 py-3.5 text-left hover:bg-white/[0.042] hover:border-glassline2 transition-all group">
                     <div>
-                      <div className="text-[14px] font-medium text-ink">{session.title || subjectNameFrom(session.subjects)}</div>
-                      <div className="text-[12px] text-ink-soft mt-0.5">{subjectNameFrom(session.subjects)} · {new Date(session.updated_at).toLocaleDateString("en-US", { month:"short", day:"numeric"})}</div>
+                      <div className="text-[14px] font-medium text-ink">{session.title}</div>
+                      <div className="text-[12px] text-ink-soft mt-0.5">{session.subjectName} · {new Date(session.updated_at).toLocaleDateString("en-US", { month:"short", day:"numeric"})}</div>
                     </div>
                     <span className="text-ink-faint group-hover:text-ink-soft"><I.arrowRight /></span>
                   </button>
@@ -101,7 +118,7 @@ export function DashboardClient({
               <h3 className="font-display text-[19px] text-ink mb-1">Quiz generator</h3>
               <p className="text-[13px] text-ink-soft mb-3 leading-relaxed">Chapter-scoped MCQs pulled from your textbook chunks.</p>
               {subjects[0] && (
-                <Link href={`/quiz/${subjects[0].id}/placeholder`} className="text-[13px] text-verdigris-bright font-medium hover:text-verdigris">Browse quizzes →</Link>
+                <Link href={`/quiz/${subjects[0].id}/${gradeLabel.replace('Grade ', '')}`} className="text-[13px] text-verdigris-bright font-medium hover:text-verdigris">Browse quizzes →</Link>
               )}
             </Glass>
             <Glass className="bg-white/[0.022]">
