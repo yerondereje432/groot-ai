@@ -31,6 +31,6 @@ import { ConsoleSmsProvider } from './sms.provider.js';
   ],
   controllers: [AuthController],
   providers: [AuthService, OtpService, ConsoleSmsProvider],
-  exports: [AuthService],
+  exports: [AuthService, JwtModule],
 })
 export class AuthModule {}
