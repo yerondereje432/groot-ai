@@ -12,6 +12,7 @@ RUN apk add --no-cache openssl
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+RUN npm run build --workspace packages/shared-types
 RUN npm run build --workspace apps/ai-service
 
 FROM node:20-alpine AS runtime
@@ -21,5 +22,6 @@ ENV NODE_ENV=production
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/ai-service/dist apps/ai-service/dist
 COPY --from=build /app/packages/shared-types/dist packages/shared-types/dist
+COPY --from=build /app/packages/shared-types/package.json packages/shared-types/package.json
 EXPOSE 4001
 CMD ["node", "apps/ai-service/dist/main.js"]
