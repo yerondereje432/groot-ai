@@ -11,3 +11,4 @@ export * from './curriculum';
 export * from './tutor';
 export * from './questions';
 export * from './auth';
+export * from './gemini-models';

@@ -5,7 +5,7 @@ export declare class GeminiEmbeddingProvider implements EmbeddingProvider {
     private readonly apiKey;
     private readonly model;
     private readonly baseUrl;
-    constructor(apiKey: string, model?: string, dimension?: number);
+    constructor(apiKey: string, model?: "gemini-embedding-001", dimension?: number);
     embed(text: string): Promise<number[]>;
     embedBatch(texts: string[]): Promise<number[][]>;
 }

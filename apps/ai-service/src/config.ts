@@ -22,10 +22,27 @@ export interface AppConfig {
 
   rerankerProvider: 'stub' | 'gemini';
 
+  /**
+   * 'redis' shares the retrieval cache across every ai-service replica —
+   * required once you run more than one instance, since the in-memory cache
+   * is per-process and silently loses its cross-instance hit rate otherwise.
+   * Falls back to 'memory' automatically if Redis is unreachable at boot.
+   */
+  cacheProvider: 'memory' | 'redis';
+
   ragTopKPreRerank: number;
   ragTopKPostRerank: number;
   ragMinConfidence: number;
   ragCacheTtlSeconds: number;
+
+  /**
+   * If the top pre-rerank vector/BM25 score already exceeds this, skip the
+   * LLM-based re-ranker call entirely and use the lexical/metadata scoring
+   * instead. Cuts one Gemini round-trip (latency + cost) per tutor turn for
+   * the (common) case where the top hit is already an obvious match — see
+   * docs/ai-rag.md "Cost & latency" section.
+   */
+  rerankSkipThreshold: number;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -55,9 +72,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 
     rerankerProvider: str(env.RERANKER_PROVIDER, 'stub') as AppConfig['rerankerProvider'],
 
+    cacheProvider: str(env.CACHE_PROVIDER, 'memory') as AppConfig['cacheProvider'],
+
     ragTopKPreRerank: num(env.RAG_TOP_K, 20),
     ragTopKPostRerank: num(env.RAG_RERANK_TOP_K, 5),
     ragMinConfidence: num(env.RAG_MIN_CONFIDENCE, 0.35),
     ragCacheTtlSeconds: num(env.RAG_CACHE_TTL_SECONDS, 3600),
+    rerankSkipThreshold: num(env.RERANK_SKIP_THRESHOLD, 0.92),
   };
 }

@@ -77,10 +77,20 @@ AS $$
       lex_weight  * COALESCE(ts_rank_cd(to_tsvector('simple', c.content), plainto_tsquery('simple', query_text)), 0)
     )::float AS combined_score
   FROM curriculum_chunks c
-  JOIN topics t ON t.id = c."topicId"
-  JOIN units  u ON u.id = t."unitId"
+  JOIN topics  t ON t.id = c."topicId"
+  JOIN units   u ON u.id = t."unitId"
+  JOIN subjects s ON s.id = u."subjectId"
   WHERE c.status = 'published'
     AND u."subjectId" = filter_subject
+    -- Grade is authoritative on `subjects`, not on chunks/topics/units.
+    -- Today subjectId already implies one grade (see @@unique([name, grade, language])
+    -- on Subject), but that's a data-modeling convention, not a constraint the
+    -- database enforces for this query. Filtering on s.grade here too means a Grade
+    -- 10 query can NEVER surface a Grade 9 chunk even if that invariant is ever
+    -- violated (bad seed data, future subject reuse across grades, manual DB edits,
+    -- etc.) — matching what docs/architecture.md and docs/ai-rag.md already claim
+    -- this function does.
+    AND s.grade = filter_grade
   ORDER BY combined_score DESC
   LIMIT top_k;
 $$;

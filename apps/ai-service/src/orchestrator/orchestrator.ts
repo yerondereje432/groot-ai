@@ -34,11 +34,23 @@ export interface OrchestratorInput {
   locale: 'am' | 'en';
 }
 
+export interface OutcomeLogger {
+  info(payload: Record<string, unknown>, msg?: string): void;
+}
+
 export interface OrchestratorDeps {
   llm: LLMProvider;
   retriever: Retriever;
   /** Session id for citation logging. */
   generateSessionId: () => string;
+  /**
+   * Per spec §31 AI observability: retrieval confidence, latency breakdown,
+   * cache hit rate, and refusal rate per query. Defaults to a no-op logger
+   * is NOT used anymore — callers get a console-based logger by default so
+   * this data is visible out of the box; pass a real structured logger
+   * (pino, etc.) in production to ship it to Prometheus/Grafana (§31/§37).
+   */
+  outcomeLogger?: OutcomeLogger;
 }
 
 export class Orchestrator {
@@ -178,16 +190,36 @@ export class Orchestrator {
     };
   }
 
-  private async recordOutcome(_out: {
+  private async recordOutcome(out: {
     sessionId: string;
     userId: string;
     intent: TutorIntent;
-    retrieval: { hits: RetrievalHit[]; topScore: number; latencyMs: number };
+    retrieval: { hits: RetrievalHit[]; topScore: number; latencyMs: number; timings?: unknown };
     citations: TutorSourceCitation[];
     answerLength: number;
     refused: boolean;
   }): Promise<void> {
-    // Wired up to telemetry in a later phase (§31).
-    // Kept async to keep the interface stable.
+    // Per spec §31 AI observability + §37 cost optimization: at minimum,
+    // emit this as a structured log line so retrieval confidence, latency
+    // breakdown (cache/embed/search/rerank), and chunk counts are visible
+    // without needing a dashboard wired up yet. A real deployment should
+    // pass a pino/OTel-backed `outcomeLogger` into the Orchestrator so this
+    // flows into Prometheus/Grafana instead of stdout.
+    const logger = this.deps.outcomeLogger ?? console;
+    logger.info(
+      {
+        sessionId: out.sessionId,
+        userId: out.userId,
+        intent: out.intent,
+        refused: out.refused,
+        topScore: out.retrieval.topScore,
+        chunkCount: out.retrieval.hits.length,
+        retrievalLatencyMs: out.retrieval.latencyMs,
+        timings: out.retrieval.timings,
+        citationCount: out.citations.length,
+        answerLength: out.answerLength,
+      },
+      'groot.tutor.outcome',
+    );
   }
 }

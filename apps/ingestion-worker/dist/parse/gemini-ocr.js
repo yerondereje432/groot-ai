@@ -19,12 +19,13 @@
  * configured. Per spec ASSUMPTIONS.md this is a reasonable interim strategy
  * pending a dedicated Ge'ez-tuned OCR model, and is documented as such below.
  */
+import { GEMINI_MODELS } from '@groot/shared-types';
 import { detectLanguage } from './index.js';
 export class GeminiOcrParser {
     constructor(options) {
         this.baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
         this.apiKey = options.apiKey;
-        this.model = options.model || 'gemini-1.5-flash';
+        this.model = options.model || GEMINI_MODELS.ocr;
     }
     async parse(filename, content) {
         const base64 = content.toString('base64');

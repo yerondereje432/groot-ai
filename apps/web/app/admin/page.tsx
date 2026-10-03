@@ -3,7 +3,15 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Shell, TopNav, GrootMark, PageContainer, Glass, Badge, Eyebrow } from "@/components/ui";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
+// NOTE: this admin dashboard predates the current apps/api — it calls
+// `/admin/textbooks` and `/admin/analytics/overview`, which don't exist on
+// the real backend (the real ingestion review endpoints are
+// `GET /ingestion/pending` and `POST /ingestion/approve/:version`, see
+// docs/ingestion.md). It was never wired up and is out of scope for the
+// "no signup wall for students" fix — left as a known pre-existing gap
+// rather than silently deleted, since rebuilding the admin review UI is a
+// separate piece of work.
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3000/api/v1";
 
 interface Textbook { id: string; title: string; publisher: string | null; edition_year: number | null; ingestion_status: string; grades: any; subjects: any; }
 interface Analytics { total_questions_answered: number; average_retrieval_confidence: number | null; low_confidence_answer_count: number; event_counts: Record<string, number>; }
@@ -28,7 +36,7 @@ export default function AdminDashboard() {
 
   return (
     <Shell>
-      <TopNav left={<GrootMark />} right={<Link href="/dashboard" className="text-[13px] text-ink-soft hover:text-ink">Student view →</Link>} />
+      <TopNav left={<GrootMark />} right={<Link href="/" className="text-[13px] text-ink-soft hover:text-ink">Student view →</Link>} />
       <PageContainer>
         <Eyebrow>SEDECIA Admin</Eyebrow>
         <h1 className="font-display text-[32px] text-ink tracking-tight mt-2 mb-1">Textbook ingestion & usage</h1>

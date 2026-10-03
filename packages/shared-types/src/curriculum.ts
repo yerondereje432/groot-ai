@@ -71,4 +71,18 @@ export interface RetrievalResult {
   topScore: number;
   /** Retrieval latency in ms — recorded for observability. */
   latencyMs: number;
+  /**
+   * Per-stage latency breakdown (ms) — lets us see where time actually goes
+   * on a tutor turn (cache / embed / vector-search / rerank) instead of only
+   * a single opaque total. Omitted on a cache hit (nothing else ran).
+   */
+  timings?: {
+    cacheHit: boolean;
+    embedMs: number;
+    searchMs: number;
+    rerankMs: number;
+    /** True if the LLM-based re-ranker call was skipped because the top
+     *  pre-rerank score already cleared `rerankSkipThreshold`. */
+    rerankSkipped: boolean;
+  };
 }

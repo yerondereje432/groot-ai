@@ -166,10 +166,24 @@ Previously deferred; now handled by `GeminiOcrParser` (`apps/ingestion-worker/sr
   density below ~40 characters/page (a real text layer virtually never triggers this) **and**
   `GEMINI_API_KEY` is configured. If OCR itself fails, it falls back again to whatever sparse
   text-layer extraction was already obtained, rather than failing the ingest job outright.
+- **Validated against a real (non-scanned) Ethiopian MoE textbook:** a real PDF is now checked
+  into this repo — `Books/G10-History-STB-2023-web.pdf` (246 pages, Grade 10 History). It's
+  born-digital (not scanned), so it only exercises `AdvancedPdfParser`, not the OCR fallback
+  path below — but running the real text-extraction path against it surfaced and fixed four
+  real, previously-latent bugs: (1) page-citation attribution was broken for essentially every
+  real PDF because `pdf-parse`'s default output never contains the form-feed character the
+  page-splitter assumed, silently collapsing the whole document into "page 1"; (2) repeated
+  running headers/footers were misdetected as new chapter headings, fragmenting one chapter
+  into dozens of bogus sections; (3) a section's recorded page was the page it *ended* on, not
+  where it started; (4) table-of-contents dot-leader lines were misdetected as real headings.
+  All four are fixed in `apps/ingestion-worker/src/parse/advanced-pdf.ts`, covered by
+  `advanced-pdf.test.ts`, and the validation itself is reproducible via
+  `apps/ingestion-worker/scripts/validate-pdf.ts`. See docs/ingestion.md for details.
 - **Known limitations — should be reviewed before production reliance:**
-  - Untested against real scanned Ethiopian MoE textbook pages (no sample scans were available
-    at build time) — accuracy on actual textbook layouts, handwriting, or low-scan-quality
-    pages is unverified.
+  - Still untested against a real *scanned* page (i.e. the OCR fallback itself,
+    `GeminiOcrParser`) — no sample scans were available in this repo. Everything above only
+    validates the non-OCR `AdvancedPdfParser` path. Accuracy on actual scanned textbook layouts,
+    handwriting, or low-scan-quality pages via Gemini OCR remains unverified.
   - No confidence score is returned per page; a garbled transcription looks the same as a
     clean one to the rest of the pipeline. A human QA pass (the existing draft→review→publish
     gate, §16 step 6) is *not optional* for OCR'd content the way it might be for text-layer

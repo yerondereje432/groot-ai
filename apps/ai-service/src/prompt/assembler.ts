@@ -15,6 +15,7 @@ import type {
   TutorIntent,
 } from '@groot/shared-types';
 import type { LLMStructuredPrompt } from '../providers/llm.interface.js';
+import { sanitizeContextContent } from '../guardrails/index.js';
 
 export interface AssembleInput {
   query: string;
@@ -52,10 +53,12 @@ export function assemblePrompt(input: AssembleInput): LLMStructuredPrompt {
     ? CURRICULUM_LOCKED_SYSTEM_AM
     : CURRICULUM_LOCKED_SYSTEM_EN;
 
+  // Retrieved chunk content is treated as untrusted input, not just the
+  // user's query — see sanitizeContextContent() for why.
   const context = input.hits.map(h => ({
     chunkId: h.chunk.id,
     sourceRef: h.chunk.sourceRef,
-    content: h.chunk.content,
+    content: sanitizeContextContent(h.chunk.content),
   }));
 
   return {

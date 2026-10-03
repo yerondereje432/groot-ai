@@ -23,7 +23,7 @@ export interface TutorSourceCitation {
     topicId: string;
     sourceRef: string;
 }
-export type TutorRefusalReason = 'low_retrieval_confidence' | 'unsafe_request' | 'rate_limited';
+export type TutorRefusalReason = 'low_retrieval_confidence' | 'unsafe_request' | 'prompt_injection' | 'rate_limited';
 export type TutorResponse = {
     kind: 'answer';
     content: string;

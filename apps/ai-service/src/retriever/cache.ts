@@ -74,3 +74,55 @@ export class RedisSemanticCache implements SemanticCache {
     return `groot:rag:${grade}:${subjectId}:${norm}`;
   }
 }
+
+/**
+ * Builds the configured cache, with a safe fallback.
+ *
+ * `CACHE_PROVIDER=redis` shares the cache across every ai-service replica —
+ * without it, each horizontally-scaled instance has its own in-memory cache
+ * and the advertised "cost optimization via caching" (§37) silently stops
+ * working the moment you run more than one pod. If Redis can't be reached
+ * at boot (wrong URL, service down), this logs a warning and degrades to
+ * the in-memory cache rather than failing startup — same fail-open pattern
+ * used for the LLM/embedding/re-ranker providers elsewhere in this service.
+ */
+export async function createSemanticCache(opts: {
+  provider: 'memory' | 'redis';
+  redisUrl: string;
+  ttlSeconds: number;
+  logger?: { warn: (msg: string) => void };
+}): Promise<SemanticCache> {
+  if (opts.provider !== 'redis') {
+    return new InMemorySemanticCache(opts.ttlSeconds);
+  }
+
+  try {
+    const { default: IORedis } = await import('ioredis');
+    const client = new IORedis(opts.redisUrl, {
+      // Fail fast at boot rather than retrying forever — we want to fall
+      // back to the in-memory cache quickly, not hang startup.
+      maxRetriesPerRequest: 1,
+      retryStrategy: () => null,
+      lazyConnect: true,
+      connectTimeout: 2000,
+    });
+    // Attach the error listener BEFORE connecting. ioredis throws an
+    // uncaught exception (crashing the process) if an 'error' event fires
+    // with zero listeners attached — attaching it only after a failed
+    // connect()/ping() (as a naive try/catch might) is too late, because
+    // the socket can still emit further async errors afterwards.
+    client.on('error', (err: Error) => {
+      opts.logger?.warn(`Redis cache connection error (continuing, cache may degrade): ${err.message}`);
+    });
+    await client.connect();
+    await client.ping();
+    return new RedisSemanticCache(client, opts.ttlSeconds);
+  } catch (err) {
+    opts.logger?.warn(
+      `CACHE_PROVIDER=redis requested but Redis is unreachable (${(err as Error).message}); ` +
+        `falling back to the in-memory cache. This works for a single instance but will not ` +
+        `share cache state once you run more than one ai-service replica.`,
+    );
+    return new InMemorySemanticCache(opts.ttlSeconds);
+  }
+}

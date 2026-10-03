@@ -57,18 +57,42 @@ Groot is a **modular monolith for MVP → service extraction at scale**
   good defaults for ≤10M rows.
 - **Hybrid retrieval** uses a SQL function `curriculum_chunks_hybrid_search`
   that combines cosine similarity (from `<=>` operator) and `ts_rank_cd`
-  lexical scoring. Metadata filtering by `grade` + `subject_id` is enforced
-  in SQL so a Grade 9 query cannot retrieve Grade 10 chunks (§14 metadata
-  filtering requirement).
+  lexical scoring. Metadata filtering by **both** `grade` and `subject_id` is
+  enforced in SQL (the function joins `subjects` and filters on `s.grade`
+  explicitly, not just `subjectId`) so a Grade 9 query cannot retrieve Grade
+  10 chunks even if the "subjectId implies grade" convention is ever violated
+  (§14 metadata filtering requirement).
 
 ## Authentication
 
-- Phone-first registration with OTP via SMS [DEFAULT per §12].
+- **No signup wall** — `apps/web` lands directly on the chat UI, the way
+  ChatGPT/other consumer AI products do, rather than gating the product
+  behind account creation. On first load the frontend silently calls
+  `POST /auth/guest` and stores the resulting JWT pair; the student never
+  sees a login/signup screen. `AuthService.guest()` creates a real `User`
+  row (role='student', a synthetic unique `guest:<id>` placeholder instead
+  of a phone number) so everything downstream — `JwtAuthGuard`, per-user
+  free-tier rate limiting (`UsageMeter`), audit logs — works completely
+  unchanged; a guest is simply a lazily-provisioned student account. Grade
+  is asked inline in the chat UI itself (not a separate account form),
+  since curriculum-locking still needs it.
+- Phone-first registration with OTP via SMS still exists as the backend
+  contract (`/auth/register` → `/auth/verify-otp`) for a future "save your
+  progress across devices" upgrade path, but nothing in the shipped web
+  app currently drives students through it.
 - JWT access tokens (15 min) + rotating refresh tokens (30 d).
 - Argon2id for any password fallback.
 - RBAC enforced via NestJS guards (`JwtAuthGuard` + `RolesGuard`).
-- In this vertical, OTP delivery is `ConsoleSmsProvider` — logs to console.
-  Real wiring needs an Ethiopian SMS gateway.
+- OTP delivery goes through an `SmsProvider` interface with three
+  implementations selected via `SMS_PROVIDER` (`console` | `twilio` | `http`):
+  `ConsoleSmsProvider` (dev default, logs to stdout), `TwilioSmsProvider`
+  (real Twilio REST API integration), and `HttpGatewaySmsProvider` (generic
+  JSON/bearer-token webhook for an Ethiopian aggregator without a bespoke
+  client here). `createSmsProvider()` (`sms.provider.ts`) throws at boot in
+  production if `twilio`/`http` is selected without credentials, rather than
+  silently falling back to console — OTP delivery failing should be loud.
+  Going live still requires real credentials (Twilio account or an
+  aggregator contract), same posture as `GEMINI_API_KEY`.
 
 ## Streaming
 

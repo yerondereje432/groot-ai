@@ -5,6 +5,18 @@ import { InMemorySemanticCache } from './cache.js';
 import { StubReRanker } from './reranker.stub.js';
 import type { RetrievalHit } from '@groot/shared-types';
 import type { HybridQuery, VectorStore } from './vector-store.js';
+import type { RerankInput, ReRanker } from './reranker.js';
+
+/** Wraps any ReRanker and counts how many times `rerank` was actually invoked. */
+class CountingReRanker implements ReRanker {
+  readonly name = 'counting';
+  calls = 0;
+  constructor(private readonly inner: ReRanker) {}
+  async rerank(input: RerankInput): Promise<RetrievalHit[]> {
+    this.calls++;
+    return this.inner.rerank(input);
+  }
+}
 
 class FakeStore implements VectorStore {
   public readonly indexed: Array<{ id: string; topicId: string; content: string; embedding: number[] }> = [];
@@ -117,5 +129,44 @@ describe('Retriever', () => {
     // the photosynthesis chunk up.
     const ids = r.hits.map(h => h.chunk.id);
     expect(ids).toContain('c1'); // photosynthesis now boosted
+  });
+
+  it('skips the re-ranker call when the top pre-rerank score already clears rerankSkipThreshold', async () => {
+    const embedder = new StubEmbeddingProvider(64);
+    const counting = new CountingReRanker(new StubReRanker());
+    const skipRetriever = new Retriever(
+      { embedder, store, reranker: counting, cache: new InMemorySemanticCache(60) },
+      { ...DEFAULT_RETRIEVER_CONFIG, minConfidence: 0.0, rerankSkipThreshold: 0.5 },
+    );
+
+    // Exact-text match against an indexed chunk — cosine similarity should
+    // be effectively 1.0 (well above the 0.5 skip threshold).
+    const r = await skipRetriever.retrieve({
+      query: 'photosynthesis converts light energy into chemical energy in plants',
+      grade: 9,
+      subjectId,
+    });
+
+    expect(counting.calls).toBe(0);
+    expect(r.timings?.rerankSkipped).toBe(true);
+    expect(r.hits[0]?.chunk.id).toBe('c1');
+  });
+
+  it('still calls the re-ranker when the top pre-rerank score is below rerankSkipThreshold', async () => {
+    const embedder = new StubEmbeddingProvider(64);
+    const counting = new CountingReRanker(new StubReRanker());
+    const noSkipRetriever = new Retriever(
+      { embedder, store, reranker: counting, cache: new InMemorySemanticCache(60) },
+      { ...DEFAULT_RETRIEVER_CONFIG, minConfidence: 0.0, rerankSkipThreshold: 0.999 },
+    );
+
+    const r = await noSkipRetriever.retrieve({
+      query: 'photosynthesis plants light',
+      grade: 9,
+      subjectId,
+    });
+
+    expect(counting.calls).toBe(1);
+    expect(r.timings?.rerankSkipped).toBe(false);
   });
 });

@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ES2022",
+    "noUncheckedIndexedAccess": false,
+    "noEmit": true
+  },
+  "include": ["src/**/*", "scripts/**/*"],
+  "references": [{ "path": "../../packages/shared-types" }]
+}

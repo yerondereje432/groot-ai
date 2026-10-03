@@ -1,5 +1,6 @@
+import { GEMINI_MODELS } from '@groot/shared-types';
 export class GeminiEmbeddingProvider {
-    constructor(apiKey, model = 'gemini-embedding-2', dimension = 768) {
+    constructor(apiKey, model = GEMINI_MODELS.embedding, dimension = 768) {
         this.name = 'gemini';
         this.baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
         this.apiKey = apiKey;

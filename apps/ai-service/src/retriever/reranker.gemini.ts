@@ -20,6 +20,7 @@
  */
 
 import type { RetrievalHit } from '@groot/shared-types';
+import { GEMINI_MODELS } from '@groot/shared-types';
 import type { RerankInput, ReRanker } from './reranker.js';
 
 export interface GeminiReRankerOptions {
@@ -43,7 +44,7 @@ export class GeminiReRanker implements ReRanker {
 
   constructor(options: GeminiReRankerOptions) {
     this.apiKey = options.apiKey;
-    this.model = options.model || 'gemini-1.5-flash';
+    this.model = options.model || GEMINI_MODELS.rerank;
     this.timeoutMs = options.timeoutMs ?? 4000;
   }
 

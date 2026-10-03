@@ -1,9 +1,13 @@
 const apiKey = process.env.GEMINI_API_KEY || "";
 const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
 
+interface ListModelsResponse {
+  models: Array<{ name: string; supportedGenerationMethods?: string[] }>;
+}
+
 fetch(url)
-  .then(r => r.json())
+  .then(r => r.json() as Promise<ListModelsResponse>)
   .then(data => {
-    console.log(data.models.map((m: any) => m.name + ' - ' + m.supportedGenerationMethods.join(',')));
+    console.log(data.models.map(m => m.name + ' - ' + (m.supportedGenerationMethods ?? []).join(',')));
   })
   .catch(console.error);
