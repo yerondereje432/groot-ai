@@ -25,7 +25,7 @@ import { PgVectorStore } from './retriever/pgvector-store.js';
 import { StubReRanker } from './retriever/reranker.stub.js';
 import { GeminiReRanker } from './retriever/reranker.gemini.js';
 import type { ReRanker } from './retriever/reranker.js';
-import { InMemorySemanticCache, RedisSemanticCache } from './retriever/cache.js';
+import { createSemanticCache } from './retriever/cache.js';
 import { Retriever, DEFAULT_RETRIEVER_CONFIG } from './retriever/retriever.js';
 import { Orchestrator } from './orchestrator/orchestrator.js';
 import type { TutorQuery } from '@groot/shared-types';
@@ -104,10 +104,14 @@ async function bootstrap() {
     reranker = new StubReRanker();
   }
 
-  // Cache — Redis preferred, in-memory fallback for dev.
-  const cache = cfg.redisUrl
-    ? new InMemorySemanticCache(cfg.ragCacheTtlSeconds) // swap to RedisSemanticCache when ioredis is initialized below
-    : new InMemorySemanticCache(cfg.ragCacheTtlSeconds);
+  // Cache — Redis when CACHE_PROVIDER=redis (shared across replicas), with
+  // automatic fallback to in-memory if Redis is unreachable at boot.
+  const cache = await createSemanticCache({
+    provider: cfg.cacheProvider,
+    redisUrl: cfg.redisUrl,
+    ttlSeconds: cfg.ragCacheTtlSeconds,
+    logger: { warn: (msg: string) => app.log.warn(msg) },
+  });
 
   const retriever = new Retriever(
     { embedder, store, reranker, cache },
@@ -116,6 +120,7 @@ async function bootstrap() {
       topKPreRerank: cfg.ragTopKPreRerank,
       topKPostRerank: cfg.ragTopKPostRerank,
       minConfidence: cfg.ragMinConfidence,
+      rerankSkipThreshold: cfg.rerankSkipThreshold,
     },
   );
 
@@ -124,6 +129,7 @@ async function bootstrap() {
       llm,
       retriever,
       generateSessionId: () => nanoid(),
+      outcomeLogger: { info: (payload, msg) => app.log.info(payload, msg) },
     },
     {
       ...DEFAULT_RETRIEVER_CONFIG,

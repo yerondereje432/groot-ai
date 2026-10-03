@@ -20,6 +20,7 @@
  * pending a dedicated Ge'ez-tuned OCR model, and is documented as such below.
  */
 
+import { GEMINI_MODELS } from '@groot/shared-types';
 import { ParsedDocument, ParsedSection, detectLanguage } from './index.js';
 
 export interface GeminiOcrOptions {
@@ -40,7 +41,7 @@ export class GeminiOcrParser {
 
   constructor(options: GeminiOcrOptions) {
     this.apiKey = options.apiKey;
-    this.model = options.model || 'gemini-1.5-flash';
+    this.model = options.model || GEMINI_MODELS.ocr;
   }
 
   async parse(filename: string, content: Buffer): Promise<ParsedDocument> {

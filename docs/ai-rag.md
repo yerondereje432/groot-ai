@@ -51,6 +51,26 @@ is enforced at three layers:
 
 ## Guardrails
 
+### Prompt-injection guard
+
+Checked **first**, before any other guard, since a successful injection
+could otherwise be used to talk the model out of its own refusal rules.
+A pattern blocklist catches classic jailbreak phrasing ("ignore previous
+instructions", "reveal your system prompt", "you are now in developer
+mode", etc.) in the **user's query** and refuses with `prompt_injection`
+without calling the LLM.
+
+This is deliberately layered with (not a replacement for) a second
+defense: retrieved **chunk content** is also untrusted from the LLM's point
+of view — the QA gate (`docs/ingestion.md`) is a human review step, not a
+cryptographic guarantee, and OCR'd content in particular (ASSUMPTIONS.md
+§F1) has no automated verification step yet. `sanitizeContextContent()`
+strips the same injection-trigger phrasing out of every context block
+before it's interpolated into the prompt, so an injected or corrupted
+chunk can't carry a live instruction either. Neither layer is a substitute
+for a dedicated moderation/classifier model at scale — see `evals/run.ts`
+for the adversarial regression cases this is tested against.
+
 ### Curriculum-lock guard
 
 If retrieval returns no chunks above `RAG_MIN_CONFIDENCE` (default 0.35),

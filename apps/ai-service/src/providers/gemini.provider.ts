@@ -6,6 +6,7 @@ import type {
   LLMStructuredPrompt 
 } from './llm.interface.js';
 import type { EmbeddingProvider } from './llm.factory.js';
+import { GEMINI_MODELS } from '@groot/shared-types';
 
 export class GeminiProvider implements LLMProvider, EmbeddingProvider {
   readonly name = 'gemini';
@@ -22,13 +23,22 @@ export class GeminiProvider implements LLMProvider, EmbeddingProvider {
     dimension?: number;
   }) {
     this.apiKey = options.apiKey;
-    this.generationModel = options.generationModel || 'gemini-3.5-flash';
-    this.embeddingModel = options.embeddingModel || 'gemini-embedding-2';
+    this.generationModel = options.generationModel || GEMINI_MODELS.generation;
+    this.embeddingModel = options.embeddingModel || GEMINI_MODELS.embedding;
     this.dimension = options.dimension || 768; // text-embedding-004 defaults to 768 but can be varied
   }
 
   async *stream(req: LLMCompletionRequest): AsyncIterable<LLMTokenChunk> {
-    const url = `${this.baseUrl}/models/${this.generationModel}:streamGenerateContent?key=${this.apiKey}`;
+    // `alt=sse` is the documented way to get real Server-Sent Events
+    // ("data: {...}\n\n" lines) out of streamGenerateContent. Without it,
+    // Gemini instead returns a single chunked JSON *array* of response
+    // objects, which has no line-delimited framing and is genuinely
+    // ambiguous to parse incrementally (the previous implementation here
+    // hand-rolled a heuristic array parser that could mis-split tokens on
+    // awkward chunk boundaries). SSE framing removes that ambiguity: each
+    // event is delimited by a blank line, so partial reads just mean "wait
+    // for more bytes," never "guess whether this JSON is complete."
+    const url = `${this.baseUrl}/models/${this.generationModel}:streamGenerateContent?alt=sse&key=${this.apiKey}`;
     const body = this.mapToGeminiBody(req.prompt, req.maxOutputTokens, req.stopSequences);
 
     const response = await fetch(url, {
@@ -52,30 +62,27 @@ export class GeminiProvider implements LLMProvider, EmbeddingProvider {
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      
-      // Gemini sends JSON chunks in an array format [{}, {}, ...]
-      // We need to parse them carefully. Simple split by ",\r\n" or similar
-      // but standard approach for streamGenerateContent is NDJSON or a single JSON array stream.
-      // Actually, streamGenerateContent returns chunks of JSON.
-      
-      // Heuristic parsing for the stream
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed === '[' || trimmed === ']') continue;
-        const cleanLine = trimmed.startsWith(',') ? trimmed.slice(1) : trimmed;
-        
-        try {
-          const json = JSON.parse(cleanLine);
-          const delta = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          if (delta) {
-            yield { delta, done: false };
+      // SSE events are separated by a blank line; keep any trailing partial
+      // event in the buffer until more bytes arrive.
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || '';
+
+      for (const event of events) {
+        for (const line of event.split('\n')) {
+          if (!line.startsWith('data:')) continue;
+          const payload = line.slice('data:'.length).trim();
+          if (!payload || payload === '[DONE]') continue;
+          try {
+            const json = JSON.parse(payload);
+            const delta = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (delta) {
+              yield { delta, done: false };
+            }
+          } catch {
+            // Malformed/partial SSE payload for this event — skip it rather
+            // than throwing away the whole stream.
           }
-        } catch (e) {
-          // Incomplete JSON, put back in buffer
-          buffer = cleanLine + '\n' + buffer;
         }
       }
     }

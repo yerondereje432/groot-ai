@@ -1,3 +1,4 @@
+import { GEMINI_MODELS } from '@groot/shared-types';
 import type { EmbeddingProvider } from './index.js';
 
 export class GeminiEmbeddingProvider implements EmbeddingProvider {
@@ -7,7 +8,7 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
   private readonly model: string;
   private readonly baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
 
-  constructor(apiKey: string, model = 'gemini-embedding-2', dimension = 768) {
+  constructor(apiKey: string, model = GEMINI_MODELS.embedding, dimension = 768) {
     this.apiKey = apiKey;
     this.model = model;
     this.dimension = dimension;

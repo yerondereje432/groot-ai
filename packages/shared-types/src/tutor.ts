@@ -34,6 +34,7 @@ export interface TutorSourceCitation {
 export type TutorRefusalReason =
   | 'low_retrieval_confidence'  // §13 guardrail: outside curriculum
   | 'unsafe_request'            // §27 safety
+  | 'prompt_injection'          // §27 safety: attempt to override system instructions
   | 'rate_limited';             // §22 free-tier metering
 
 export type TutorResponse =

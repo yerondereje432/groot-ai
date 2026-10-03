@@ -21,12 +21,23 @@ export interface RetrieverConfig {
   topKPostRerank: number;
   /** Below this score, the orchestrator refuses (§13 guardrail). */
   minConfidence: number;
+  /**
+   * If the top pre-rerank hybrid score already exceeds this, skip the
+   * re-ranker call and just truncate to topKPostRerank. Only meaningful for
+   * LLM-based re-rankers (GeminiReRanker) where skipping saves a network
+   * round-trip + token cost on every tutor turn; the free lexical
+   * StubReRanker has no such cost, but honors this too for consistency.
+   * Default is intentionally high (0.92) so it only fires for near-exact
+   * matches, not the common "pretty good match" case.
+   */
+  rerankSkipThreshold: number;
 }
 
 export const DEFAULT_RETRIEVER_CONFIG: RetrieverConfig = {
   topKPreRerank: 20,
   topKPostRerank: 5,
   minConfidence: 0.35,
+  rerankSkipThreshold: 0.92,
 };
 
 export interface RetrieverDeps {
@@ -60,11 +71,14 @@ export class Retriever {
         hasConfidentAnswer: cached.length > 0 && (cached[0]?.score ?? 0) >= this.cfg.minConfidence,
         topScore: cached[0]?.score ?? 0,
         latencyMs: Date.now() - start,
+        timings: { cacheHit: true, embedMs: 0, searchMs: 0, rerankMs: 0, rerankSkipped: false },
       };
     }
 
     // 2. Embed query.
+    const embedStart = Date.now();
     const embedding = input.queryEmbedding ?? await this.deps.embedder.embed(input.query);
+    const embedMs = Date.now() - embedStart;
 
     // 3. Hybrid search with metadata filtering (§14).
     const q: HybridQuery = {
@@ -75,17 +89,30 @@ export class Retriever {
       topicId: input.topicId,
       topK: this.cfg.topKPreRerank,
     };
+    const searchStart = Date.now();
     const raw: RetrievalHit[] = await this.deps.store.hybridSearch(q);
+    const searchMs = Date.now() - searchStart;
 
-    // 4. Re-rank (§14).
-    const reranked = await this.deps.reranker.rerank({
-      query: input.query,
-      grade: input.grade,
-      subjectId: input.subjectId,
-      topicId: input.topicId,
-      candidates: raw,
-      topK: this.cfg.topKPostRerank,
-    });
+    // 4. Re-rank (§14) — unless the top pre-rerank hit is already such an
+    // obvious match (>= rerankSkipThreshold) that spending a network
+    // round-trip (and, for GeminiReRanker, LLM tokens) on re-ranking isn't
+    // worth the latency/cost. This is the common "student asked a question
+    // that closely matches one chunk's wording" case.
+    const topPreRerankScore = raw.length > 0 ? Math.max(...raw.map(h => h.score)) : 0;
+    const shouldSkipRerank = topPreRerankScore >= this.cfg.rerankSkipThreshold;
+
+    const rerankStart = Date.now();
+    const reranked = shouldSkipRerank
+      ? [...raw].sort((a, b) => b.score - a.score).slice(0, this.cfg.topKPostRerank)
+      : await this.deps.reranker.rerank({
+          query: input.query,
+          grade: input.grade,
+          subjectId: input.subjectId,
+          topicId: input.topicId,
+          candidates: raw,
+          topK: this.cfg.topKPostRerank,
+        });
+    const rerankMs = Date.now() - rerankStart;
 
     // 5. Cache the final result.
     await this.deps.cache.set(
@@ -100,6 +127,7 @@ export class Retriever {
       hasConfidentAnswer: reranked.length > 0 && (reranked[0]?.score ?? 0) >= this.cfg.minConfidence,
       topScore: reranked[0]?.score ?? 0,
       latencyMs: Date.now() - start,
+      timings: { cacheHit: false, embedMs, searchMs, rerankMs, rerankSkipped: shouldSkipRerank },
     };
   }
 }

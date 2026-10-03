@@ -11,7 +11,7 @@ import { nanoid } from 'nanoid';
 import type { CurrentUser, OtpChallenge, AuthTokens } from '@groot/shared-types';
 import { DatabaseModule } from '../../database/database.module.js';
 import { OtpService } from './otp.service.js';
-import { SmsProvider, ConsoleSmsProvider } from './sms.provider.js';
+import { SmsProvider, SMS_PROVIDER } from './sms.provider.js';
 
 export interface RegisterInput {
   phone: string;
@@ -27,7 +27,7 @@ export class AuthService {
     private readonly otp: OtpService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
-    private readonly sms: ConsoleSmsProvider,
+    @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
   ) {}
 
   async register(input: RegisterInput): Promise<OtpChallenge> {

@@ -9,6 +9,7 @@
  * (or a shared library) to keep the embedding model in lock-step.
  */
 
+import { GEMINI_MODELS } from '@groot/shared-types';
 import { StubEmbeddingProvider } from '../util/stub-embedder.js';
 import { GeminiEmbeddingProvider } from './gemini.js';
 
@@ -25,7 +26,7 @@ export function localEmbeddingProvider(
   apiKey?: string
 ): EmbeddingProvider {
   if (provider === 'gemini' && apiKey) {
-    return new GeminiEmbeddingProvider(apiKey, 'gemini-embedding-2', dimension);
+    return new GeminiEmbeddingProvider(apiKey, GEMINI_MODELS.embedding, dimension);
   }
   return new StubEmbeddingProvider(dimension);
 }

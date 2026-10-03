@@ -17,7 +17,7 @@ import { ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { OtpService } from './otp.service.js';
-import { ConsoleSmsProvider } from './sms.provider.js';
+import { SMS_PROVIDER, createSmsProvider } from './sms.provider.js';
 
 @Module({
   imports: [
@@ -30,7 +30,24 @@ import { ConsoleSmsProvider } from './sms.provider.js';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, OtpService, ConsoleSmsProvider],
+  providers: [
+    AuthService,
+    OtpService,
+    {
+      provide: SMS_PROVIDER,
+      inject: [ConfigService],
+      useFactory: (cfg: ConfigService) =>
+        createSmsProvider({
+          provider: cfg.get('smsProvider', 'console'),
+          nodeEnv: cfg.get('nodeEnv', 'development'),
+          twilioAccountSid: cfg.get('twilioAccountSid'),
+          twilioAuthToken: cfg.get('twilioAuthToken'),
+          twilioFromNumber: cfg.get('twilioFromNumber'),
+          smsGatewayUrl: cfg.get('smsGatewayUrl'),
+          smsGatewayApiKey: cfg.get('smsGatewayApiKey'),
+        }),
+    },
+  ],
   exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

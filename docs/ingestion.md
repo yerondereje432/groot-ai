@@ -17,11 +17,56 @@ PDF ──► │  Parse  │ ──► │  Chunk  │ ──► │  Embed  �
 Supports:
 - **Markdown** (`.md`, `.markdown`) — splits on heading levels.
 - **Plain text** (`.txt`) — splits on double newlines.
-- **PDF** (`.pdf`) — uses `pdf-parse` for text-layer PDFs. OCR for scanned
-  PDFs is deferred (see ASSUMPTIONS.md).
+- **PDF** (`.pdf`) — uses `pdf-parse` for text-layer PDFs via
+  `AdvancedPdfParser`, falling back to Gemini OCR (`src/parse/gemini-ocr.ts`)
+  when `looksLikeScannedDocument()` detects low text density. OCR quality
+  against real scanned Ethiopian MoE textbooks is still unverified — no
+  scanned sample was available (see ASSUMPTIONS.md).
 
 Language detection identifies Ge'ez-heavy text as Amharic and routes it
 accordingly.
+
+#### Validated against a real textbook
+
+`Books/G10-History-STB-2023-web.pdf` (246 pages, Ministry of Education
+Grade 10 History) is checked into this repo and was used to validate
+`AdvancedPdfParser` end-to-end (`apps/ingestion-worker/scripts/validate-pdf.ts`
+is the reusable tool; `src/parse/advanced-pdf.test.ts` has the regression
+tests). It's a born-digital PDF (density ~1340 chars/page, well above the
+scanned-document threshold), so it doesn't exercise the OCR fallback path —
+that part is still unverified — but running the real parsing path against
+it surfaced and fixed three real, previously-latent bugs:
+
+1. **Every chunk's page citation was wrong.** `AdvancedPdfParser` split
+   pages on a form-feed character (`text.split(/\f/)`) that `pdf-parse`'s
+   own default output *never contains* — its default page-joiner is a
+   plain `"\n\n"` (confirmed by reading `pdf-parse`'s source). In practice
+   this collapsed the entire document into a single "page," so every
+   `source_ref` (e.g. "p.42") would have cited the wrong page for almost
+   any real PDF. Fixed by passing a custom `pagerender` callback to
+   `pdf-parse` that explicitly appends a `\f` marker per page.
+2. **Running headers/footers fragmented sections.** A chapter/unit title
+   printed in the header of every page (e.g. "Unit 1 | Development of
+   Capitalism...") matched the heading-detection regexes on *every* page
+   it appeared on, shattering one coherent chapter into dozens of
+   near-empty fragments (224 bogus sections on the real book, dropping to
+   144 once fixed). Fixed with a frequency-based running-header/footer
+   filter: a line repeating verbatim across many pages is treated as page
+   furniture, not a heading, regardless of its shape.
+3. **Section page numbers pointed at the wrong end of the section.** The
+   page recorded for a section was the page where the *next* heading was
+   found (i.e. where the section ends), not where it started — a chapter
+   spanning pages 5–20 was cited as page 20. Fixed by tracking the start
+   page explicitly.
+4. (Smaller) table-of-contents lines using dot leaders ("2.6 Impacts of
+   Colonial Rule .................... 39") matched the same "N.N Title"
+   heading regex as a real section heading and got treated as one. Fixed
+   with a dot-leader line filter.
+
+After these fixes, page attribution across the real 246-page book is
+monotonically increasing end-to-end with zero regressions, and the
+previously-latent ToC/running-header noise is gone (down to 1 tiny
+fragment out of 144 detected sections, vs. 4/224 before).
 
 ### 2. Chunk (`apps/ingestion-worker/src/chunk/index.ts`)
 

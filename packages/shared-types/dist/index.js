@@ -26,4 +26,5 @@ __exportStar(require("./curriculum"), exports);
 __exportStar(require("./tutor"), exports);
 __exportStar(require("./questions"), exports);
 __exportStar(require("./auth"), exports);
+__exportStar(require("./gemini-models"), exports);
 //# sourceMappingURL=index.js.map

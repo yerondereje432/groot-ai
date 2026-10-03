@@ -56,7 +56,11 @@ async function main() {
   console.log('seed.sql applied.');
 
   // 2. Ingest each file.
-  const pipeline = new IngestionPipeline(pool, 384);
+  const pipeline = new IngestionPipeline(pool, {
+    embeddingDim: Number(process.env.EMBEDDING_DIM ?? 384),
+    embeddingProvider: (process.env.EMBEDDING_PROVIDER as 'stub' | 'gemini') ?? 'stub',
+    geminiApiKey: process.env.GEMINI_API_KEY,
+  });
   const versions: string[] = [];
   for (const job of JOBS) {
     const filePath = join(SAMPLE_DIR, job.file);
