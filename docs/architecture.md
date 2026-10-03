@@ -65,7 +65,21 @@ Groot is a **modular monolith for MVP → service extraction at scale**
 
 ## Authentication
 
-- Phone-first registration with OTP via SMS [DEFAULT per §12].
+- **No signup wall** — `apps/web` lands directly on the chat UI, the way
+  ChatGPT/other consumer AI products do, rather than gating the product
+  behind account creation. On first load the frontend silently calls
+  `POST /auth/guest` and stores the resulting JWT pair; the student never
+  sees a login/signup screen. `AuthService.guest()` creates a real `User`
+  row (role='student', a synthetic unique `guest:<id>` placeholder instead
+  of a phone number) so everything downstream — `JwtAuthGuard`, per-user
+  free-tier rate limiting (`UsageMeter`), audit logs — works completely
+  unchanged; a guest is simply a lazily-provisioned student account. Grade
+  is asked inline in the chat UI itself (not a separate account form),
+  since curriculum-locking still needs it.
+- Phone-first registration with OTP via SMS still exists as the backend
+  contract (`/auth/register` → `/auth/verify-otp`) for a future "save your
+  progress across devices" upgrade path, but nothing in the shipped web
+  app currently drives students through it.
 - JWT access tokens (15 min) + rotating refresh tokens (30 d).
 - Argon2id for any password fallback.
 - RBAC enforced via NestJS guards (`JwtAuthGuard` + `RolesGuard`).

@@ -1,5 +1,5 @@
 import { Body, Controller, HttpCode, Post } from '@nestjs/common';
-import { IsOptional, IsString, MinLength } from 'class-validator';
+import { IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
 import { AuthService } from './auth.service.js';
 
 class RegisterDto {
@@ -7,6 +7,10 @@ class RegisterDto {
   @IsString() @MinLength(2) fullName!: string;
   @IsOptional() @IsString() inviteCode?: string;
   @IsOptional() @IsString() role?: 'student' | 'teacher';
+}
+
+class GuestDto {
+  @IsOptional() @IsInt() @Min(9) @Max(12) grade?: number;
 }
 
 class VerifyOtpDto {
@@ -30,6 +34,16 @@ export class AuthController {
   @HttpCode(200)
   register(@Body() dto: RegisterDto) {
     return this.auth.register(dto);
+  }
+
+  /**
+   * No-signup-wall entry point: issues a real JWT pair for a transparently
+   * created guest student account. See AuthService.guest() for rationale.
+   */
+  @Post('guest')
+  @HttpCode(200)
+  guest(@Body() dto: GuestDto) {
+    return this.auth.guest(dto);
   }
 
   @Post('verify-otp')

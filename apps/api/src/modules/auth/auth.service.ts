@@ -45,6 +45,44 @@ export class AuthService {
     };
   }
 
+  /**
+   * Anonymous/guest access — per the product decision to let students reach
+   * the tutor immediately (no signup wall), the way ChatGPT and similar
+   * products work, rather than requiring phone verification up front.
+   *
+   * This still creates a real `User` row (role='student') so the rest of
+   * the system — JwtAuthGuard, per-user rate limiting (UsageMeter), audit
+   * logs — keeps working completely unchanged; a guest is simply a
+   * lazily-provisioned student account with a synthetic, unique
+   * placeholder "phone" (never a real number, never SMS'd) instead of one
+   * obtained via OTP. The frontend calls this transparently on first load
+   * and stores the resulting tokens — the student never sees an auth
+   * screen. Grade is optional here because the client may ask for it
+   * inline in the chat UI itself, rather than as a separate account field.
+   */
+  async guest(input: { grade?: number } = {}): Promise<AuthTokens> {
+    const phone = `guest:${nanoid()}`;
+    const user = await this.prisma.user.create({
+      data: {
+        phone,
+        fullName: 'Guest',
+        role: 'student',
+        locale: 'en',
+        grade: input.grade,
+      },
+    });
+    return this.issueTokens({
+      id: user.id,
+      role: user.role,
+      fullName: user.fullName,
+      phone: user.phone,
+      email: user.email ?? null,
+      locale: user.locale,
+      grade: user.grade ?? undefined,
+      schoolId: user.schoolId ?? undefined,
+    });
+  }
+
   async verifyOtp(challengeId: string, code: string, profile: RegisterInput): Promise<AuthTokens> {
     if (!this.otp.verify(challengeId, code)) {
       throw new UnauthorizedException('Invalid or expired OTP');
